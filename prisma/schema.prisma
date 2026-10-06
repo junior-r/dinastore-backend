@@ -4,10 +4,310 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider     = "prisma-client"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum ProductStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum Role {
+  CUSTOMER
+  STAFF
+  ADMIN
+}
+
+enum OAuthProvider {
+  GOOGLE
+  GITHUB
+  SPOTIFY
+  APPLE
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  // Null for users who only ever signed in via an OAuth provider.
+  passwordHash  String?        @map("password_hash")
+  name          String
+  // Only ever populated from an OAuth provider's profile photo — there is no
+  // upload/edit path for password-only accounts.
+  avatarUrl     String?        @map("avatar_url")
+  role          Role           @default(CUSTOMER)
+  // Blocks future logins (password and OAuth) once false. Existing JWTs
+  // already issued stay valid until they naturally expire -- JwtStrategy is
+  // deliberately stateless (no DB lookup per request); the admin
+  // PermissionsGuard re-checks this on every admin route for immediate
+  // effect there, but the rest of the site does not.
+  isActive      Boolean        @default(true) @map("is_active")
+  // Fixed, known permission strings (see Permission enum in
+  // src/modules/users/domain/entities/permission.ts) -- only meaningful for
+  // STAFF; ADMIN bypasses permission checks entirely regardless of this.
+  permissions   String[]       @default([])
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  orders        Order[]
+  oauthAccounts OAuthAccount[]
+  comments      Comment[]
+  commentLikes  CommentLike[]
+  productViews  ProductView[]
+  designs       Design[]
+
+  @@map("users")
+}
+
+// One row per (provider, providerAccountId) a user has signed in with, so the
+// same email can be reached via password login and/or multiple OAuth
+// providers without duplicating the User row.
+model OAuthAccount {
+  id                String        @id @default(uuid())
+  userId            String        @map("user_id")
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider          OAuthProvider
+  providerAccountId String        @map("provider_account_id")
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("oauth_accounts")
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          String         @id @default(uuid())
+  name        String
+  slug        String         @unique
+  description String?
+  basePriceCents Int         @map("base_price_cents")
+  currency    String         @default("USD")
+  status      ProductStatus  @default(DRAFT)
+  categories  Category[]
+  variants    ProductVariant[]
+  images      ProductImage[]
+  comments    Comment[]
+  views       ProductView[]
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  @@map("products")
+}
+
+model ProductVariant {
+  id          String   @id @default(uuid())
+  productId   String   @map("product_id")
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  size        String
+  color       String
+  sku         String   @unique
+  stock       Int      @default(0)
+  priceCents  Int?     @map("price_cents")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  // Images this variant should show when selected in the storefront -- see
+  // ProductImage.variants below. Empty on the image side means "applies to
+  // every variant", so a variant can go unlisted here without being unable
+  // to display anything (it just falls back to the untagged images).
+  images      ProductImage[] @relation("ProductImageVariants")
+
+  @@unique([productId, size, color])
+  @@map("product_variants")
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  altText   String?  @map("alt_text")
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  // Which variants this image applies to (e.g. tagging a photo to only the
+  // "black" size variants when physical stock differs by color). An image
+  // with no rows here applies to every variant of the product -- this is
+  // the default for an image nobody has tagged.
+  variants  ProductVariant[] @relation("ProductImageVariants")
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  userId         String      @map("user_id")
+  user           User        @relation(fields: [userId], references: [id])
+  status         OrderStatus @default(PENDING)
+  subtotalCents  Int         @map("subtotal_cents")
+  currency       String      @default("USD")
+  items          OrderItem[]
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("orders")
+}
+
+// Line items snapshot product/variant data at order time on purpose (no FK to
+// ProductVariant) so an order stays intact even if the variant is later
+// edited or removed from the catalog.
+model OrderItem {
+  id               String   @id @default(uuid())
+  orderId          String   @map("order_id")
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId        String   @map("product_id")
+  productVariantId String   @map("product_variant_id")
+  productName      String   @map("product_name")
+  variantSize      String   @map("variant_size")
+  variantColor     String   @map("variant_color")
+  unitPriceCents   Int      @map("unit_price_cents")
+  quantity         Int
+  // Set together, and only on a line the shopper customized in the design
+  // studio. Snapshots like the rest of this row (no FK to Design): the print
+  // file an order was placed with must stay reachable even if the design row
+  // is later removed. Keys are storage keys, see FileStorage.
+  designId           String? @map("design_id")
+  designThumbnailKey String? @map("design_thumbnail_key")
+  designPrintKey     String? @map("design_print_key")
+  // The garment photo the shopper positioned the design on.
+  garmentImageUrl    String? @map("garment_image_url")
+  // { x, y, width }: centre and width of the design as fractions of that
+  // photo. See orders/domain/design-placement.ts.
+  designPlacement    Json?   @map("design_placement")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@index([designId])
+  @@map("order_items")
+}
+
+// A shopper's uploaded artwork. Three files per design, all storage keys:
+// the upload as received (normalized, no logo), the print-ready file with the
+// store logo applied, and a small preview that also carries the logo.
+model Design {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceKey    String   @map("source_key")
+  printKey     String   @map("print_key")
+  thumbnailKey String   @map("thumbnail_key")
+  // Pixel size of the print file.
+  width        Int
+  height       Int
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("designs")
+}
+
+// Author's name/avatar are read live via the user relation (not snapshotted
+// like OrderItem) — a comment should reflect the commenter's current
+// profile, not one frozen at post time.
+model Comment {
+  id        String   @id @default(uuid())
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String
+  // Self-relation for threading. Null = a root (depth 1) comment. Deleting a
+  // comment cascades to its replies, same as deleting a product does.
+  parentId  String?  @map("parent_id")
+  parent    Comment? @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
+  // Denormalized 1..3 nesting level, assigned by the domain on create. Stored
+  // rather than derived so the list query can order/indent without walking
+  // the parent chain per row.
+  depth     Int      @default(1)
+  // The single optional image attached to the comment. These are storage
+  // *keys* (see FileStorage), not URLs -- the URL is derived at read time, so
+  // switching storage backend or CDN never requires rewriting these rows.
+  // All four are set together or not at all.
+  imageKey          String? @map("image_key")
+  imageThumbnailKey String? @map("image_thumbnail_key")
+  imageWidth        Int?    @map("image_width")
+  imageHeight       Int?    @map("image_height")
+  createdAt DateTime @default(now()) @map("created_at")
+  likes     CommentLike[]
+
+  @@index([productId])
+  @@index([parentId])
+  @@map("comments")
+}
+
+// A user's like on a comment. The composite unique is what makes liking
+// idempotent -- "like" is an upsert and "unlike" a deleteMany, so a double
+// click can never produce two rows or a negative count.
+model CommentLike {
+  commentId String   @map("comment_id")
+  comment   Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("comment_likes")
+}
+
+// One row per visit to a product page: who looked, from where, and for how
+// long. This is a history table -- rows are only ever appended and then
+// topped up while that visit is still open, never rewritten afterwards.
+//
+// The id is generated by the browser, one per page visit, which is what lets
+// the same row be updated as the visit goes on (see RecordProductViewHandler).
+model ProductView {
+  id          String   @id
+  // Nullable with SetNull, plus a name snapshot, for the same reason
+  // OrderItem snapshots its product: deleting a product from the catalog must
+  // not erase the record that people looked at it.
+  productId   String?  @map("product_id")
+  product     Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName String   @map("product_name")
+  // Null for a visitor who was not signed in.
+  userId      String?  @map("user_id")
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // Random id kept in the browser's localStorage. It is the only thing that
+  // ties together several visits by someone who never signs in.
+  visitorId   String   @map("visitor_id")
+  // Read from the connection by the server, never taken from the request
+  // body, so a page can't claim an address it doesn't have.
+  ipAddress   String   @map("ip_address")
+  // ISO 3166-1 alpha-2, or null when the address can't be placed (loopback
+  // and private ranges, i.e. all local development).
+  country     String?
+  // Time the page was actually visible, not wall-clock time since it opened.
+  durationMs  Int      @default(0) @map("duration_ms")
+  // Whether the product was in the visitor's favorites when last reported.
+  favorited   Boolean  @default(false)
+  startedAt   DateTime @default(now()) @map("started_at")
+  lastSeenAt  DateTime @updatedAt @map("last_seen_at")
+
+  @@index([startedAt])
+  @@index([productId, startedAt])
+  @@index([userId])
+  @@map("product_views")
 }

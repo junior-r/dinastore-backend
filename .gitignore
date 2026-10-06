@@ -7,3 +7,6 @@ coverage
 .env
 
 /generated/prisma
+
+# Uploaded product images (local disk storage, not committed)
+/uploads
