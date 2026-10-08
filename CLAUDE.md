@@ -159,6 +159,16 @@ Initial scaffolding (Section 5's original task) is done and superseded by this l
   - **Seen once and not explained**: during browser testing the API process exited with Windows code `0xC0000409` and no stack trace, a few seconds after a successful `PUT …/reviews/mine`. The same requests replayed by curl and again through the browser did not reproduce it. If the dev server dies silently, note what it was doing.
   - **Known gaps**: no "verified purchase" check (anyone signed in can rate); product responses carry no rating, so catalog cards can't show stars yet; no rate limiting; no admin moderation of reviews.
 
+- **Product views: filters, grouped views, insights, forecast and Excel export** (added 2026-10-07, frontend counterpart in its progress log; details in `docs/features/analytics.md`).
+  - `GET /admin/analytics/product-views` gained filters (`search`, `from`/`to`, `country`, `visitor`, `favorited`, `userId`, `visitorId`, alongside `productId`). New routes under it, same permission and same filters: `/by-product`, `/by-visitor`, `/insights`, `/export`.
+  - **The filter exists twice in `PrismaProductViewRepository`**: `where()` (Prisma, for the row list) and `whereSql()` (raw SQL, for the aggregates Prisma can't express). They must stay equivalent. `test/analytics.e2e-spec.ts` runs 19 filter cases through both and compares counts; add a case there when adding a filter.
+  - Forecast and product momentum are pure functions in `domain/view-forecast.ts` (a fitted line plus a weekday factor; last week against the one before). They return `insufficient` under 7 days of history rather than guess, and ignore `from`/`to` while honoring every other filter.
+  - `ViewInsightsReader` (application) is shared by the insights query and the export, so the spreadsheet holds the numbers the screen showed. "A day" is the viewer's: routes take `tzOffset`.
+  - Export goes through a `ProductViewsWorkbookPort`; `ExcelJsProductViewsWorkbook` is the only place `exceljs` (new dependency) is imported. Built in memory, capped at 20,000 visits.
+  - `GetProductViewsQuery` now takes a filter object instead of a bare `productId`.
+  - Verified: tsc and eslint clean, 444 unit tests, `analytics.e2e-spec.ts` 57 tests green against Postgres. The other e2e specs were not re-run.
+  - **Known gaps**: aggregates are computed per request with no rollups; the export is synchronous; the forecast has never been compared with real traffic.
+
 ### Not yet built
 
 - **Payments** — no Stripe/MercadoPago integration; `POST /orders/:id/pay` is a stub that confirms immediately (see above).
