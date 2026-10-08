@@ -10,6 +10,7 @@ Developer-onboarding documentation for the DinaStore backend (NestJS + Prisma/Po
   - [`catalog.md`](./features/catalog.md) — products, categories, variants, images
   - [`orders.md`](./features/orders.md) — placing/paying orders, stock decrement
   - [`comments.md`](./features/comments.md) — product comments and moderation
+  - [`reviews.md`](./features/reviews.md) — star ratings with an optional comment, one per shopper per product
   - [`users.md`](./features/users.md) — auth, JWT, OAuth, roles/permissions, admin user management
   - [`realtime.md`](./features/realtime.md) — Socket.io gateway bridging domain events to clients
   - [`analytics.md`](./features/analytics.md) — product-view history: time watched, IP, country, favorites

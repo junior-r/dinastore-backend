@@ -64,5 +64,8 @@ const queryHandlers = [GetProductCommentsHandler];
       inject: [ConfigService],
     },
   ],
+  // Used by ReviewsModule, whose review comments follow the same moderation
+  // policy and need the same "does this product exist" check.
+  exports: [PRODUCT_LOOKUP_PORT, COMMENT_MODERATION_PORT],
 })
 export class CommentsModule {}
