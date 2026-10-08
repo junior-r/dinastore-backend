@@ -1,98 +1,75 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# DinaStore Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API and services layer for the DinaStore e-commerce / print-on-demand platform. NestJS, DDD + CQRS, Prisma/PostgreSQL, Redis, JWT auth.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Prerequisites
 
-## Description
+- Node.js 22+
+- [pnpm](https://pnpm.io/)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for local PostgreSQL + Redis)
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Setup
 
 ```bash
-$ pnpm install
+cp .env.example .env      # then edit JWT_SECRET etc. if needed
+docker compose up -d      # starts Postgres + Redis
+pnpm install
+pnpm exec prisma migrate dev   # creates the schema and generates the Prisma client
 ```
 
-## Compile and run the project
+`docker compose up -d` must stay running (or be started again) any time you run the app, its tests, or Prisma commands — everything talks to that Postgres/Redis instance. Check its status with `docker ps`.
+
+## Running the app
 
 ```bash
-# development
-$ pnpm run start
-
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+pnpm run start:dev    # watch mode, http://localhost:3000
+pnpm run start        # no watch
+pnpm run build        # compiles to dist/
+pnpm run start:prod   # runs the compiled build (dist/main.js)
 ```
 
-## Run tests
+## Testing
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm run test         # unit tests (Jest) — no Docker required, all I/O is mocked
+pnpm run test:e2e     # e2e tests — requires Docker (Postgres) to be running
+pnpm run test:cov     # unit tests with coverage
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+## Other useful commands
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+pnpm run lint                         # eslint --fix
+pnpm run format                       # prettier --write
+pnpm exec prisma studio               # browse the database
+pnpm exec prisma migrate dev --name X # create a new migration after editing prisma/schema.prisma
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Environment variables
 
-## Resources
+See `.env.example` for the full list. Notable ones:
 
-Check out a few resources that may come in handy when working with NestJS:
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Postgres connection string (matches `docker-compose.yml` by default) |
+| `REDIS_URL` | Redis connection string |
+| `JWT_SECRET` | Signing secret for auth tokens — change this for any non-local environment |
+| `JWT_EXPIRES_IN_SECONDS` | Access token lifetime, in seconds |
+| `FRONTEND_URL` | Allowed CORS origin (the frontend dev server, `http://localhost:4321` by default) |
+| `PORT` | HTTP port the API listens on (defaults to `3000`) |
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## Architecture
 
-## Support
+Each business domain under `src/modules/` follows the same DDD/CQRS layering:
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```
+modules/<domain>/
+├── domain/            # entities, repository interfaces, domain services — no framework/Prisma imports
+├── application/       # CQRS commands + queries + handlers, orchestrating the domain layer
+├── infrastructure/    # Prisma repository implementations, external service adapters
+└── presentation/      # controllers, DTOs
+```
 
-## Stay in touch
+Shared cross-cutting infrastructure (Prisma client/module, global exception filters, the `DomainError` base class) lives under `src/shared/`.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Implemented so far: **Catalog** (products, categories, variants) and **Users** (registration, JWT login, `/auth/me`).
