@@ -58,6 +58,7 @@ model User {
   oauthAccounts OAuthAccount[]
   comments      Comment[]
   commentLikes  CommentLike[]
+  reviews       ProductReview[]
   productViews  ProductView[]
   designs       Design[]
 
@@ -104,6 +105,7 @@ model Product {
   variants    ProductVariant[]
   images      ProductImage[]
   comments    Comment[]
+  reviews     ProductReview[]
   views       ProductView[]
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
@@ -271,6 +273,31 @@ model CommentLike {
   @@id([commentId, userId])
   @@index([userId])
   @@map("comment_likes")
+}
+
+// A shopper's star rating of a product, with or without a written comment.
+// One per (product, user): rating again replaces the earlier one rather than
+// stacking a second vote, which is what the composite unique enforces.
+//
+// Separate from Comment on purpose. A comment is a message in a thread (it
+// can be a reply, can be liked, there can be many per person); a review is a
+// single score that feeds the product's average.
+model ProductReview {
+  id        String   @id @default(uuid())
+  productId String   @map("product_id")
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // 1..5, whole stars. Enforced by the domain entity.
+  rating    Int
+  // Null for a rating left without a comment.
+  body      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([productId, userId])
+  @@index([userId])
+  @@map("product_reviews")
 }
 
 // One row per visit to a product page: who looked, from where, and for how

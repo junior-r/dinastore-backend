@@ -7,6 +7,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
 import { UsersModule } from './modules/users/users.module';
 import { CustomizationsModule } from './modules/customizations/customizations.module';
 import { GamificationModule } from './modules/gamification/gamification.module';
@@ -29,6 +30,7 @@ import { StorageModule } from './shared/infrastructure/storage/storage.module';
     StorageModule,
     CatalogModule,
     CommentsModule,
+    ReviewsModule,
     OrdersModule,
     UsersModule,
     CustomizationsModule,

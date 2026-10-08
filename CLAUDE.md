@@ -148,6 +148,17 @@ Initial scaffolding (Section 5's original task) is done and superseded by this l
   - Migration `20261005021552_add_designs`.
   - Verified: tsc and eslint clean, 373 unit tests (15 new). Live against the running API as a throwaway user: too-small and non-image uploads refused with 400, a real upload returning a thumbnail with the logo in place and transparency kept, an out-of-range placement and an unknown design refused, an order with one plain and one customized line of the same variant taking 2 from stock, the admin route returning 403 to a customer and the rows to an admin. Test user, orders and files were deleted and stock restored afterwards. **Not verified**: no e2e spec was written for this, and the existing e2e suites were not re-run after the order response gained `customization`.
 
+- **Reviews domain: star ratings with an optional comment** (added 2026-10-07, `src/modules/reviews/`, frontend counterpart in its progress log; full write-up in `docs/features/reviews.md`).
+  - New table `product_reviews` (migration `20261007120000_add_product_reviews`, purely additive, applied to the dev database). `@@unique([productId, userId])`: one review per shopper per product. `rating` is 1..5 whole stars, `body` is nullable.
+  - **Separate from Comments on purpose.** A comment is a message in a thread; a review is one score that feeds the average. A review's comment is not part of the comment thread.
+  - `GET /catalog/products/:productId/reviews` (public, `OptionalJwtAuthGuard`) returns `items` (**only reviews with a comment**, most recently edited first), `summary` (`average`, `count`, `distribution`, covering every rating) and `viewerReview` (the caller's own, since a bare rating is not in `items`). `PUT …/reviews/mine` creates or replaces the caller's review; `DELETE …/reviews/mine` removes it and is a 204 either way. Reviews are addressed by (product, caller), never by id, so no route can name someone else's.
+  - `Review.revise()` replaces rating and comment together: rating again without a comment removes the old comment. A blank comment is stored as `null`.
+  - **`CommentsModule` now exports `PRODUCT_LOOKUP_PORT` and `COMMENT_MODERATION_PORT`**, and `ReviewsModule` imports it. A review's comment goes through the same moderation chain; a rating with no comment skips moderation.
+  - `PrismaReviewRepository.save()` catches the upsert's P2002 race and turns it into an update, same as `PrismaCommentLikeRepository.like`. Covered by a "concurrent first ratings" e2e test.
+  - Verified: tsc and eslint clean, 419 unit tests (46 new), `test/reviews.e2e-spec.ts` (15 tests, cleans up after itself) green against real Postgres. The other e2e specs were not re-run.
+  - **Seen once and not explained**: during browser testing the API process exited with Windows code `0xC0000409` and no stack trace, a few seconds after a successful `PUT …/reviews/mine`. The same requests replayed by curl and again through the browser did not reproduce it. If the dev server dies silently, note what it was doing.
+  - **Known gaps**: no "verified purchase" check (anyone signed in can rate); product responses carry no rating, so catalog cards can't show stars yet; no rate limiting; no admin moderation of reviews.
+
 ### Not yet built
 
 - **Payments** — no Stripe/MercadoPago integration; `POST /orders/:id/pay` is a stub that confirms immediately (see above).
