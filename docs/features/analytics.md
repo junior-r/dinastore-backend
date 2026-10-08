@@ -26,8 +26,71 @@ Table `product_views` (Prisma model `ProductView`):
   optional; when present and valid the visit is tied to that user, and an
   invalid one is ignored rather than rejected.
 - `GET /admin/analytics/product-views` — `ADMIN`, or `STAFF` holding
-  `analytics:view`. Query: `page`, `pageSize` (max 100), optional `productId`.
-  Newest first.
+  `analytics:view`. Query: `page`, `pageSize` (max 100), plus the filters
+  below. Newest first.
+- `GET /admin/analytics/product-views/by-product` and `/by-visitor` — the
+  same history summed up per product, or per person (an account across all
+  its browsers, or a browser that never signed in). Paginated, most views
+  first; `total` counts groups, not visits.
+- `GET /admin/analytics/product-views/insights` — what the admin page charts:
+  totals, a zero-filled daily series, top products, views by country, a
+  forecast and product momentum. Takes `tzOffset`
+  (`Date#getTimezoneOffset` from the browser) so a "day" is the viewer's.
+- `GET /admin/analytics/product-views/export` — the filtered history as an
+  `.xlsx` file with four sheets (visits, by product, by visitor, daily plus
+  forecast). Takes `tzOffset` and `lang` (`en`/`es`, for sheet names and
+  headers).
+
+All four admin routes share one permission and one set of filters
+(`ProductViewFilterDto`), combined with AND:
+
+| Query | Meaning |
+| --- | --- |
+| `search` | Case-insensitive match on product name, visitor name or email, IP address, or the start of the browser id. |
+| `from`, `to` | ISO instants; `from` inclusive, `to` exclusive. |
+| `country` | Two-letter code, or `unknown` for visits that couldn't be placed. |
+| `visitor` | `signed-in` or `anonymous`. |
+| `favorited` | `true` or `false`. |
+| `productId`, `userId`, `visitorId` | Narrow to one product, account or browser. |
+
+## Aggregates and the two filter builders
+
+The row list goes through a Prisma `where`; the aggregates are raw SQL
+(`date_trunc`, `count(DISTINCT …)`, `FILTER`), which Prisma's query builder
+can't express. So `PrismaProductViewRepository` holds the filter twice:
+`where()` and `whereSql()`. **They must stay equivalent**, or the table and
+the charts on the same page would describe different visits. The e2e spec
+runs every filter through both and compares the counts.
+
+`started_at` is a `timestamp` without time zone holding UTC, so instants are
+sent as UTC wall-clock text cast to `timestamp`; the comparison then doesn't
+depend on the database session's `TimeZone`.
+
+## Forecast and momentum
+
+Both live in `domain/view-forecast.ts` as plain functions and are estimates:
+
+- **Forecast** (`forecastViews`): a least-squares line through the daily
+  views of the last 28 full days, multiplied by a weekday factor once there
+  are 21 days to learn it from, for the next 7 days. The range is ±1.28
+  standard deviations of the model's own past error (about 80%). Days before
+  the first recorded view are dropped rather than counted as zeros. With
+  under 7 days of history it returns `status: 'insufficient'` instead of a
+  guess. Today is excluded from the history because it is still filling up.
+- **Momentum** (`rankMomentum`): each product's last 7 days against the 7
+  before, labelled new / rising / steady / cooling (±20%), with next week
+  projected by carrying half of the change forward.
+
+Both ignore `from`/`to` (they always read the most recent weeks) and honor
+every other filter, which is what makes a forecast for one product or one
+country possible.
+
+## Export
+
+`ExportProductViewsHandler` gathers the data and hands it to
+`ProductViewsWorkbookPort`; `ExcelJsProductViewsWorkbook` (the `exceljs`
+dependency) writes the file. It is built in memory, so the visits sheet is
+capped at 20,000 rows (newest kept) and says so in the file when it cuts.
 
 ## How recording works
 
@@ -78,8 +141,12 @@ That sensitivity is also why reading the history has its own permission
 - **No rate limiting** on the public endpoint (the app has none anywhere).
   A script can insert rows freely. Each needs a real product id, and it can't
   touch other visitors' rows, but it can inflate counts.
-- **Only raw rows**, no aggregates (average time per product, views per
-  country). The data to compute them is all here.
+- **Aggregates are computed on every request**, with no cache or rollup
+  table. Fine at the current size; a large history would want daily rollups.
+- **The export is synchronous and in memory.** Past the 20,000-row cap it
+  would need a background job and a download link.
+- The forecast is deliberately simple and has not been checked against real
+  traffic. Treat it as a guide.
 - Staff and admins browsing the storefront are recorded like anyone else.
 - Favorites are stored per browser on the frontend, so `favorited` reflects
   that browser, not the account.
